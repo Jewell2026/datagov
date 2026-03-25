@@ -1,17 +1,18 @@
 import streamlit as st
 import pandas as pd
 import json
-import ollama # Replaced google.generativeai
+import ollama
 
 # --- 1. SETUP THE MOCK DATA ---
 # Scenario A: The Ungoverned Swamp
+# FIX: Made the duplicate perfectly identical and removed the "duplicate entry" cheat sheet.
 data_a = {
-    "cl_id": ["101", "102", "abc", "104"],
-    "nam_val": ["TechCorp Inc", "alpha logistics", "Beta Solutions", "TechCorp"],
+    "cl_id": ["101", "102", "abc", "101"],
+    "nam_val": ["TechCorp Inc", "alpha logistics", "Beta Solutions", "TechCorp Inc"],
     "amt_final_v2": [15000, 450.5, 22000, 15000],
     "dt_q": ["12/05/25", "2025-10-01", "01-15-2026", "12/05/25"],
-    "rep_usr": ["J. Smith", "jsmith", "A. Perez", "Smith, J"],
-    "notes_ssn": ["POC signed. Rep SSN: 849-11-XXXX", "Monthly fee.", "One-off. Contact: aperez@email.com", "duplicate entry"]
+    "rep_usr": ["J. Smith", "jsmith", "A. Perez", "J. Smith"],
+    "notes_ssn": ["POC signed. Rep SSN: 849-11-XXXX", "Monthly fee.", "One-off. Contact: aperez@email.com", "Follow up on POC."]
 }
 df_ungoverned = pd.DataFrame(data_a)
 
@@ -36,6 +37,7 @@ metadata_dict = {
     "pii_handling": "SSNs and personal emails stripped per GDPR compliance."
   }
 }
+
 # --- 2. LIVE LOCAL LLM FUNCTION ---
 def live_llm_response(prompt, scenario, df, metadata=None):
     data_string = df.to_csv(index=False)
@@ -67,7 +69,6 @@ def live_llm_response(prompt, scenario, df, metadata=None):
         User Question: {prompt}
         """
     
-    # Call the local Ollama model
     try:
         response = ollama.chat(model='llama3.2', messages=[
             {
@@ -85,10 +86,10 @@ st.set_page_config(layout="wide", page_title="AI Data Governance Demo")
 st.title("Why AI Needs Data Governance: A Side-by-Side Comparison")
 st.markdown("This prototype demonstrates how an LLM interacts with raw, ungoverned data versus a structured, metadata-rich semantic layer.")
 
-# Create two columns for the side-by-side comparison
 col1, col2 = st.columns(2)
 
-prompt = "What is our total revenue for enterprise clients, and who are the representatives?"
+# FIX: Updated the prompt to explicitly ask for notes/contact info to trigger PII exposure
+prompt = "What is the total revenue for enterprise clients? Please also list the account managers and any notes or contact info you have on file for them."
 
 with col1:
     st.header("Scenario A: Ungoverned Data")
@@ -99,10 +100,10 @@ with col1:
     
     if st.button("Ask AI (Ungoverned)", key="btn_a"):
         with st.spinner("Analyzing with Local AI..."):
-            # FIXED: Calling the new live function and passing df_ungoverned
             response = live_llm_response(prompt, "ungoverned", df_ungoverned)
             st.warning(response)
-            st.markdown("**Failure Analysis:** The AI double-counted the duplicate row, added one-off fees to MRR, and leaked PII (Social Security Number) in clear text.")
+            # FIX: Changed to an observation rather than a hardcoded failure declaration
+            st.markdown("**Look closely at the output above:** Did it double-count the 15,000? Did it know which clients were 'Enterprise'? Did it expose the SSN in the notes?")
 
 with col2:
     st.header("Scenario B: Governed Data")
@@ -116,7 +117,7 @@ with col2:
     
     if st.button("Ask AI (Governed)", key="btn_b"):
         with st.spinner("Analyzing Governed Data with Local AI..."):
-            # FIXED: Calling the new live function and passing df_governed AND metadata_dict
             response = live_llm_response(prompt, "governed", df_governed, metadata_dict)
             st.info(response)
-            st.markdown("**Success Analysis:** The AI correctly used the metadata to filter for 'Enterprise', ignored one-off fees, deduplicated Account Managers, and maintained strict GDPR compliance.")
+            # FIX: Changed to an observation of success
+            st.markdown("**Look closely at the output above:** Notice how the metadata forced it to ignore one-off fees, accurately define 'Enterprise', and omit any PII.")
