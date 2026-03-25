@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import json
+import ollama # Replaced google.generativeai
 
 # --- 1. SETUP THE MOCK DATA ---
 # Scenario A: The Ungoverned Swamp
@@ -35,34 +36,48 @@ metadata_dict = {
     "pii_handling": "SSNs and personal emails stripped per GDPR compliance."
   }
 }
-
-# --- 2. MOCK LLM FUNCTION ---
-# This simulates how an LLM behaves with and without context/governance
-def mock_llm_response(prompt, scenario):
+# --- 2. LIVE LOCAL LLM FUNCTION ---
+def live_llm_response(prompt, scenario, df, metadata=None):
+    data_string = df.to_csv(index=False)
+    
     if scenario == "ungoverned":
-        # The AI guesses, calculates wrong, and leaks PII
-        return """
-        **AI Response:**
-        Based on the data provided, the total revenue is **52,450.5** (Sum of amt_final_v2). 
-        The top representatives are J. Smith, jsmith, A. Perez, and Smith, J. 
+        system_instruction = f"""
+        You are an AI assistant answering questions based on the provided dataset. 
+        Here is the raw data in CSV format:
+        {data_string}
         
-        *Note: Contact A. Perez at aperez@email.com. J. Smith's SSN on file is 849-11-XXXX.*
+        Answer the user's question directly based ONLY on this data.
+        User Question: {prompt}
         """
+        
     elif scenario == "governed":
-        # The AI uses the metadata, filters correctly, and respects privacy
-        return """
-        **AI Response:**
-        Based on the governed dataset and metadata provided:
+        metadata_string = json.dumps(metadata, indent=2)
+        system_instruction = f"""
+        You are an enterprise AI assistant. You have been provided with a clean dataset 
+        and a strict metadata dictionary that defines the rules, columns, and governance policies.
         
-        The total Monthly Recurring Revenue (MRR) for Enterprise clients is **15,000.00 EUR**. 
-        *(Note: Beta Solutions is excluded as their MRR is 0.00, representing a one-off fee).*
+        Metadata & Governance Rules:
+        {metadata_string}
         
-        The Account Managers for these Enterprise accounts are:
-        1. John Smith
-        2. Ana Perez
+        Governed Data (CSV format):
+        {data_string}
         
-        *Privacy Check: No PII or sensitive representative data is accessible in this dataset.*
+        Follow the metadata rules strictly when calculating answers. Do not mention the raw CSV format to the user.
+        Answer the user's question based on this governed data and context.
+        User Question: {prompt}
         """
+    
+    # Call the local Ollama model
+    try:
+        response = ollama.chat(model='llama3.2', messages=[
+            {
+                'role': 'user',
+                'content': system_instruction
+            }
+        ])
+        return response['message']['content']
+    except Exception as e:
+        return f"Local Engine Error (Make sure Ollama is running!): {e}"
 
 # --- 3. STREAMLIT UI ---
 st.set_page_config(layout="wide", page_title="AI Data Governance Demo")
@@ -83,8 +98,9 @@ with col1:
     st.markdown(f"**User Prompt:** *\"{prompt}\"*")
     
     if st.button("Ask AI (Ungoverned)", key="btn_a"):
-        with st.spinner("Analyzing..."):
-            response = mock_llm_response(prompt, "ungoverned")
+        with st.spinner("Analyzing with Local AI..."):
+            # FIXED: Calling the new live function and passing df_ungoverned
+            response = live_llm_response(prompt, "ungoverned", df_ungoverned)
             st.warning(response)
             st.markdown("**Failure Analysis:** The AI double-counted the duplicate row, added one-off fees to MRR, and leaked PII (Social Security Number) in clear text.")
 
@@ -99,7 +115,8 @@ with col2:
     st.markdown(f"**User Prompt:** *\"{prompt}\"*")
     
     if st.button("Ask AI (Governed)", key="btn_b"):
-        with st.spinner("Analyzing with Metadata Context..."):
-            response = mock_llm_response(prompt, "governed")
+        with st.spinner("Analyzing Governed Data with Local AI..."):
+            # FIXED: Calling the new live function and passing df_governed AND metadata_dict
+            response = live_llm_response(prompt, "governed", df_governed, metadata_dict)
             st.info(response)
             st.markdown("**Success Analysis:** The AI correctly used the metadata to filter for 'Enterprise', ignored one-off fees, deduplicated Account Managers, and maintained strict GDPR compliance.")
